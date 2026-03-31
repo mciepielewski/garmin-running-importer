@@ -1,7 +1,7 @@
 /**
  * Garmin Connect — Structured Running Plan Uploader
  *
- * Uploads a 10-week half-marathon training plan to Garmin Connect
+ * Uploads a training plan to Garmin Connect
  * as structured workouts, scheduled in your calendar.
  *
  * Usage: paste into browser console at connect.garmin.com
@@ -342,25 +342,54 @@ const BASE = "https://connect.garmin.com/gc-api";
 // AUTH
 // =============================================================================
 
-// Fetch CSRF token automatically from an active Garmin Connect API request.
-// No manual copying needed — the browser already has an active session.
-let CSRF;
-try {
-  const probe = await fetch(`${BASE}/web-gateway/users/displayName`, {
-    credentials: "include"
-  });
-  CSRF = probe.headers.get("connect-csrf-token") ||
-         document.cookie.match(/CSRF[^=]*=([^;]+)/i)?.[1];
-} catch (_) {}
+// Get CSRF token.
+// Try to find it automatically, otherwise wait for the user to provide it.
+let CSRF = null;
 
+// 1. Try meta tag (some Garmin pages expose it here)
+CSRF = document.querySelector('meta[name="csrf-token"]')?.content || null;
+
+// 2. Scan localStorage / sessionStorage for a UUID-shaped CSRF value
 if (!CSRF) {
-  // Fallback: ask user if auto-detection failed
-  CSRF = prompt(
-    "Auto-detection failed. Paste connect-csrf-token manually:\n" +
-    "(F12 → Network → any gc-api request → Request Headers)"
-  );
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for (const storage of [localStorage, sessionStorage]) {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (/csrf/i.test(key)) {
+        const val = storage.getItem(key);
+        if (val && uuidRe.test(val.trim())) { CSRF = val.trim(); break; }
+      }
+    }
+    if (CSRF) break;
+  }
 }
-if (!CSRF) { console.error("No CSRF token found. Make sure you are logged in at connect.garmin.com."); return; }
+
+// 3. Wait for the user to provide it via garminCSRF("...") in the console
+if (!CSRF) {
+  console.log(
+    "%cHow to get the CSRF token:%c\n\n" +
+    "1. Open DevTools → Network tab\n" +
+    "2. Click anything on the page to trigger a request\n" +
+    "3. Click any request to connect.garmin.com/gc-api/...\n" +
+    "4. Under Request Headers, find: connect-csrf-token\n" +
+    "5. Copy the value and run:\n\n" +
+    "   %cgarminCSRF(\"paste-token-here\")%c",
+    "font-weight:bold;font-size:13px", "font-size:12px",
+    "font-family:monospace;background:#1e1e1e;color:#4ec9b0;padding:2px 6px",
+    "font-size:12px"
+  );
+
+  CSRF = await new Promise(resolve => {
+    window.garminCSRF = (token) => {
+      delete window.garminCSRF;
+      resolve(token.trim());
+      console.log("Token accepted. Continuing...");
+    };
+  });
+}
+
+if (!CSRF) { console.error("No CSRF token. Aborting."); return; }
+console.log("CSRF token ready.");
 
 // =============================================================================
 // API
