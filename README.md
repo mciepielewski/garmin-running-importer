@@ -4,9 +4,13 @@
 
 Paste one file into your browser's DevTools console while logged into Garmin Connect. It uploads structured workouts and schedules them automatically in your calendar. No external dependencies, no tokens to manage, no Python or Node required.
 
+The script ships with a ready-to-run 10-week sub-1:40 half marathon example plan. Edit it to match your own training before running — or just change the start date and go.
+
 ---
 
-## The plan — 10 weeks to sub-1:40 half marathon
+## Example plan — 10 weeks to sub-1:40 half marathon
+
+The script includes a ready-made plan as a starting point. You can use it as-is, tweak the paces, or replace it entirely with your own sessions — see [Customising the plan](#customising-the-plan) below.
 
 Goal pace: **4:44 min/km** | Sessions: Tuesday intervals + Thursday easy/strides + Sunday long run
 
@@ -35,7 +39,18 @@ Open `upload_running_plan.js` and edit the line at the top:
 const START_DATE = "2026-04-01";  // First Monday of your training plan
 ```
 
-### 2. Run the script
+### 2. Edit the plan (or keep the example)
+
+Scroll down to the `PLAN` array in the script. The included plan is a 10-week sub-1:40 half marathon programme — use it as-is or replace it with your own sessions.
+
+At minimum, check that the paces match your current fitness:
+- `"4:30"` — 1000m interval pace (should feel hard but controlled)
+- `"4:35"` — 1600m interval pace
+- `"4:44"` — goal race pace (long run tempo finish)
+
+Not sure? Keep the defaults, start week 1, and adjust based on how it feels.
+
+### 3. Run the script
 
 1. Open **[connect.garmin.com](https://connect.garmin.com)** in your browser and log in
 2. Press **F12** → **Console** tab
@@ -278,6 +293,26 @@ Garmin Connect's web app communicates with an internal REST API at `connect.garm
 
 Authentication uses the browser's existing session cookies. The only extra credential needed is the CSRF token, which is already in every request the web app makes.
 
+**Workout structure:**
+
+```
+Workout
+└── WorkoutSegment
+    ├── ExecutableStepDTO  (warmup — 2km, no pace target)
+    ├── RepeatGroupDTO     (N repetitions)
+    │   ├── ExecutableStepDTO  (interval — distance + pace zone target)
+    │   └── ExecutableStepDTO  (recovery — time-based)
+    └── ExecutableStepDTO  (cooldown — 2km, no pace target)
+```
+
+Pace targets are stored as m/s with a ±5 sec/km window around the target:
+
+```
+4:30/km = 270 sec/km
+  faster bound: 1000 / 265 ≈ 3.7736 m/s
+  slower bound: 1000 / 275 ≈ 3.6364 m/s
+```
+
 ---
 
 ## Troubleshooting
@@ -287,6 +322,9 @@ Your session has expired. Refresh connect.garmin.com, log in again, and re-run t
 
 **`HTTP 429 Too Many Requests`**  
 Garmin rate-limited your session. Wait 15–30 minutes and try again. This usually happens after repeated failed login attempts from external tools (not from this script).
+
+**Workout uploads but shows `NaN:NaN /km` pace**  
+You may be running an older version of the script. The `targetValueOne`/`targetValueTwo` fields must be at the step level, not nested inside `targetType`. Pull the latest version.
 
 **Build error: "Unknown step type"**  
 A step in your plan uses a `type` that isn't supported. Valid values: `easy`, `tempo`, `intervals`, `strides`, `recovery`.
