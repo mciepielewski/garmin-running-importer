@@ -1,7 +1,7 @@
 /**
  * Garmin Connect — Structured Running Plan Uploader
  *
- * Uploads a custom training plan to Garmin Connect
+ * Uploads a 10-week half-marathon training plan to Garmin Connect
  * as structured workouts, scheduled in your calendar.
  *
  * Usage: paste into browser console at connect.garmin.com
@@ -35,14 +35,49 @@ const HR_ZONES = {
 // =============================================================================
 // PLAN DEFINITION
 //
-// Each entry is one workout session:
+// Each entry is one workout session.
 //
-//   { week, day, steps, name? }
+// ── DATE FORMAT (choose one) ─────────────────────────────────────────────────
 //
-//   week  {number}   Week number (1, 2, 3 ...)
-//   day   {string}   "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun"
-//   steps {array}    Ordered list of step objects (see below)
-//   name  {string}   Optional. Overrides the auto-generated workout name.
+//   { date: "2026-04-01", steps }
+//     Exact date. Scheduled on that specific day, regardless of START_DATE.
+//
+//   { week: 1, day: "tue", steps }
+//     Week-relative. Computed from START_DATE — week 1 tue = first Tuesday
+//     of the plan, week 2 tue = second Tuesday, etc.
+//
+//   { day: "tue", steps }
+//     Day-only. Scheduled on the first Tuesday strictly after the previous
+//     entry's date. Useful when mixing exact dates and day names, or when
+//     you don't want to count weeks manually.
+//
+// You can mix all three formats freely within the same plan.
+//
+// ── OTHER FIELDS ─────────────────────────────────────────────────────────────
+//
+//   steps    {array}   Ordered list of step objects (see below) — required
+//   name     {string}  Optional. Overrides the auto-generated workout name.
+//   estMins  {number}  Optional. Overrides the auto-calculated duration.
+//
+// ── MIXING DATE FORMATS — EXAMPLES ───────────────────────────────────────────
+//
+//   // Pure week/day (START_DATE-relative):
+//   { week: 1, day: "tue", steps: [...] }
+//   { week: 1, day: "sun", steps: [...] }
+//
+//   // Pure exact dates:
+//   { date: "2026-04-01", steps: [...] }
+//   { date: "2026-04-03", steps: [...] }
+//
+//   // Mixed: exact date then day-only (next Wednesday after April 1):
+//   { date: "2026-04-01", steps: [...] }
+//   { day: "wed",         steps: [...] }   // → 2026-04-08
+//   { day: "fri",         steps: [...] }   // → 2026-04-10
+//
+//   // Mixed: two exact dates then back to week/day:
+//   { date: "2026-04-01", steps: [...] }
+//   { date: "2026-04-03", steps: [...] }
+//   { week: 2, day: "tue", steps: [...] }  // computed from START_DATE independently
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP REFERENCE
@@ -380,12 +415,76 @@ function addDays(date, n) {
   return d.toISOString().slice(0, 10);
 }
 
-const planStart = toMonday(START_DATE);
-console.log(`Plan start (Monday): ${planStart.toISOString().slice(0, 10)}`);
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
 
-function workoutDate(week, day) {
-  if (!(day in DAY_OFFSET)) throw new Error(`Unknown day: "${day}". Use mon/tue/wed/thu/fri/sat/sun.`);
-  return addDays(planStart, (week - 1) * 7 + DAY_OFFSET[day]);
+/**
+ * Find the first occurrence of a weekday on or after a given date.
+ * dayName: "mon" | "tue" | ... | "sun"
+ * afterDate: Date object
+ */
+function nextWeekday(dayName, afterDate) {
+  if (!(dayName in DAY_OFFSET))
+    throw new Error(`Unknown day: "${dayName}". Use mon/tue/wed/thu/fri/sat/sun.`);
+  // JS: 0=Sun,1=Mon,...,6=Sat  vs  our offset: mon=0,...,sun=6
+  const jsTarget = (DAY_OFFSET[dayName] + 1) % 7; // convert our offset to JS day
+  const d = new Date(afterDate);
+  const diff = (jsTarget - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+const planStart = toMonday(START_DATE);
+console.log(`Plan start (Monday): ${isoDate(planStart)}`);
+
+/**
+ * Resolve the calendar date for a plan entry.
+ *
+ * Supports three formats:
+ *   { date: "2026-04-01", ... }       — exact date, used as-is
+ *   { week: 1, day: "tue", ... }      — week-relative, computed from START_DATE
+ *   { day: "tue", ... }               — first occurrence of that weekday
+ *                                        strictly after the previous entry's date
+ *
+ * lastDate is the Date object of the previously resolved entry (used for day-only).
+ */
+function resolveDate(entry, lastDate) {
+  // Exact date
+  if (entry.date) {
+    return { dateStr: entry.date, dateObj: new Date(entry.date) };
+  }
+
+  // Week + day
+  if (entry.week != null && entry.day) {
+    if (!(entry.day in DAY_OFFSET))
+      throw new Error(`Unknown day: "${entry.day}". Use mon/tue/wed/thu/fri/sat/sun.`);
+    const dateObj = new Date(planStart);
+    dateObj.setDate(planStart.getDate() + (entry.week - 1) * 7 + DAY_OFFSET[entry.day]);
+    return { dateStr: isoDate(dateObj), dateObj };
+  }
+
+  // Day-only: first occurrence of that weekday strictly after lastDate
+  if (entry.day) {
+    const after = lastDate ? new Date(lastDate) : new Date(planStart);
+    after.setDate(after.getDate() + 1); // strictly after
+    const dateObj = nextWeekday(entry.day, after);
+    return { dateStr: isoDate(dateObj), dateObj };
+  }
+
+  throw new Error(
+    `Plan entry missing date info. Provide "date", "week"+"day", or "day".
+` +
+    `Entry: ${JSON.stringify(entry)}`
+  );
+}
+
+/** Build a human-readable label for console output */
+function entryLabel(entry, dateStr) {
+  if (entry.date)                  return `[${dateStr}]`;
+  if (entry.week != null && entry.day) return `[Week ${entry.week} ${entry.day.toUpperCase()}] (${dateStr})`;
+  if (entry.day)                   return `[${entry.day.toUpperCase()} ${dateStr}]`;
+  return `[${dateStr}]`;
 }
 
 // =============================================================================
@@ -784,26 +883,35 @@ function buildWorkout(entry) {
 
 console.log(`\nUploading ${PLAN.length} workouts to Garmin Connect...\n`);
 let success = 0, failed = 0;
+let lastDateObj = null; // tracks previous entry's date for day-only resolution
 
 for (const entry of PLAN) {
-  const dateStr = workoutDate(entry.week, entry.day);
-  let workout;
+  let dateStr, dateObj, label;
 
   try {
-    workout = buildWorkout(entry);
+    ({ dateStr, dateObj } = resolveDate(entry, lastDateObj));
+    label = entryLabel(entry, dateStr);
   } catch (err) {
-    console.error(`✗ [Week ${entry.week} ${entry.day}] Build error: ${err.message}`);
+    console.error(`✗ Date error: ${err.message}`);
     failed++;
     continue;
   }
 
-  const label = `[Week ${entry.week} ${entry.day.toUpperCase()}]`;
+  let workout;
+  try {
+    workout = buildWorkout(entry);
+  } catch (err) {
+    console.error(`✗ ${label} Build error: ${err.message}`);
+    failed++;
+    continue;
+  }
 
   try {
     const id = await uploadWorkout(workout);
     await scheduleWorkout(id, dateStr);
     console.log(`✓ ${label} ${workout.workoutName} → ${dateStr}  (ID: ${id})`);
     success++;
+    lastDateObj = dateObj;
   } catch (err) {
     console.error(`✗ ${label} ${workout.workoutName}: ${err.message}`);
     failed++;
