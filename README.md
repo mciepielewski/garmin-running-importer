@@ -76,6 +76,34 @@ Workouts sync to your watch automatically once the calendar is updated.
 
 ---
 
+## Date formats
+
+Each plan entry must specify when the workout happens. Three formats are supported and can be mixed freely:
+
+```javascript
+// 1. Exact date — scheduled on this specific day
+{ date: "2026-04-01", steps: [...] }
+
+// 2. Week + day — relative to START_DATE at the top of the script
+{ week: 1, day: "tue", steps: [...] }
+
+// 3. Day only — first occurrence of that weekday strictly after the previous entry
+{ day: "wed", steps: [...] }
+```
+
+**Day-only** is useful when mixing with exact dates or when you prefer not to count weeks manually:
+
+```javascript
+{ date: "2026-04-01", steps: [...] }  // Wednesday April 1
+{ day: "fri",         steps: [...] }  // → Friday April 3  (next Friday after Apr 1)
+{ day: "sun",         steps: [...] }  // → Sunday April 5  (next Sunday after Apr 3)
+{ day: "tue",         steps: [...] }  // → Tuesday April 7 (next Tuesday after Apr 5)
+```
+
+All three formats produce the same console output — `✓ [Week 1 TUE] ... → 2026-04-01` — so you always see the resolved date.
+
+---
+
 ## Step reference
 
 Each workout is a list of `steps` in order. Every step has a `type` and some parameters.
@@ -240,13 +268,14 @@ A session entry has these fields:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `week` | number | yes | Week number |
-| `day` | string | yes | `"mon"` `"tue"` `"wed"` `"thu"` `"fri"` `"sat"` `"sun"` |
+| `date` | string | one of date / week+day / day | Exact date `"YYYY-MM-DD"` |
+| `week` | number | one of date / week+day / day | Week number (used with `day`) |
+| `day` | string | one of date / week+day / day | `"mon"` `"tue"` `"wed"` `"thu"` `"fri"` `"sat"` `"sun"` |
 | `steps` | array | yes | Ordered list of step objects |
 | `name` | string | no | Custom workout name (auto-generated if omitted) |
 | `estMins` | number | no | Estimated duration in minutes (auto-calculated if omitted) |
 
-All seven days of the week are supported. Sessions on the same day in the same week are not allowed (Garmin only schedules one workout per day).
+All seven days of the week are supported. Garmin only supports one workout per calendar day — scheduling two entries on the same date will create two separate workouts on that day.
 
 ---
 
