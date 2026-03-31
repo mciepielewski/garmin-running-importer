@@ -254,26 +254,6 @@ Garmin Connect's web app communicates with an internal REST API at `connect.garm
 
 Authentication uses the browser's existing session cookies. The only extra credential needed is the CSRF token, which is already in every request the web app makes.
 
-**Workout structure:**
-
-```
-Workout
-└── WorkoutSegment
-    ├── ExecutableStepDTO  (warmup — 2km, no pace target)
-    ├── RepeatGroupDTO     (N repetitions)
-    │   ├── ExecutableStepDTO  (interval — distance + pace zone target)
-    │   └── ExecutableStepDTO  (recovery — time-based)
-    └── ExecutableStepDTO  (cooldown — 2km, no pace target)
-```
-
-Pace targets are stored as m/s with a ±5 sec/km window around the target:
-
-```
-4:30/km = 270 sec/km
-  faster bound: 1000 / 265 ≈ 3.7736 m/s
-  slower bound: 1000 / 275 ≈ 3.6364 m/s
-```
-
 ---
 
 ## Troubleshooting
@@ -283,9 +263,6 @@ Your session has expired. Refresh connect.garmin.com, log in again, and re-run t
 
 **`HTTP 429 Too Many Requests`**  
 Garmin rate-limited your session. Wait 15–30 minutes and try again. This usually happens after repeated failed login attempts from external tools (not from this script).
-
-**Workout uploads but shows `NaN:NaN /km` pace**  
-You may be running an older version of the script. The `targetValueOne`/`targetValueTwo` fields must be at the step level, not nested inside `targetType`. Pull the latest version.
 
 **Build error: "Unknown step type"**  
 A step in your plan uses a `type` that isn't supported. Valid values: `easy`, `tempo`, `intervals`, `strides`, `recovery`.
