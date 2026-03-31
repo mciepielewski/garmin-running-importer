@@ -322,6 +322,8 @@ Garmin Connect's web app communicates with an internal REST API at `connect.garm
 
 Authentication uses the browser's existing session cookies. The only extra credential needed is the CSRF token, which is already in every request the web app makes.
 
+**Workout structure:**
+
 Pace targets are stored as m/s with a ±5 sec/km window around the target:
 
 ```
@@ -336,6 +338,9 @@ Pace targets are stored as m/s with a ±5 sec/km window around the target:
 
 **`HTTP 403 Forbidden`**  
 Your session has expired. Refresh connect.garmin.com, log in again, and re-run the script.
+
+**Firefox: `_cfuid cookie has been rejected`**  
+Firefox blocks Cloudflare tracking cookies by default, which Garmin Connect needs. Either click the shield icon in the address bar and disable Enhanced Tracking Protection for connect.garmin.com, or use Chrome/Edge instead — the script works reliably in both.
 
 **`HTTP 429 Too Many Requests`**  
 Garmin rate-limited your session. Wait 15–30 minutes and try again. This usually happens after repeated failed login attempts from external tools (not from this script).
