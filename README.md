@@ -35,7 +35,7 @@ Open `upload_running_plan.js` and edit the line at the top:
 const START_DATE = "2026-04-01";  // First Monday of your training plan
 ```
 
-### 2. Run the script
+### 3. Run the script
 
 1. Open **[connect.garmin.com](https://connect.garmin.com)** in your browser and log in
 2. Press **F12** → **Console** tab
@@ -76,6 +76,21 @@ If both are provided, `km` takes precedence. If neither is provided, a default i
 
 ---
 
+### Distance or duration
+
+Every step accepts **distance** (`km` or `m`) **or duration** (`mins` or `secs`) — not both. Priority when multiple are given: `km` > `m` > `mins` > `secs`.
+
+```javascript
+{ type: "easy", km: 10 }        // 10 kilometres
+{ type: "easy", m: 10000 }      // same
+{ type: "easy", mins: 45 }      // 45 minutes
+{ type: "easy", secs: 2700 }    // same (45 × 60)
+```
+
+Time-based steps have their distance estimated at ~5:30/km for the workout summary and calendar entry.
+
+---
+
 ### Target — pace or heart rate
 
 Every step (except `strides` and `recovery`) accepts one optional target. Priority: `pace` > `hrZone` > `hr` > none.
@@ -97,19 +112,22 @@ Conversational pace. No target by default.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `km` | number | one of km/m | 1 | Distance in kilometres |
-| `m` | number | one of km/m | — | Distance in metres |
+| `km` | number | one of km/m/mins/secs | — | Distance in kilometres |
+| `m` | number | one of km/m/mins/secs | — | Distance in metres |
+| `mins` | number | one of km/m/mins/secs | — | Duration in minutes |
+| `secs` | number | one of km/m/mins/secs | — | Duration in seconds |
 | `pace` | string | no | — | Soft pace zone |
 | `hrZone` | number | no | — | HR zone target (alternative to pace) |
 | `hr` | number\|array | no | — | HR bpm target (alternative to pace/hrZone) |
 | `label` | string | no | — | `"warmup"` or `"cooldown"` — changes step colour in the app |
 
 ```javascript
-{ type: "easy", km: 2,  label: "warmup" }
+{ type: "easy", km: 2,    label: "warmup" }
 { type: "easy", km: 10 }
-{ type: "easy", km: 12, hrZone: 2 }           // easy in Z2
-{ type: "easy", km: 8,  hr: [130, 148] }      // easy in specific bpm range
-{ type: "easy", km: 3,  pace: "5:30" }        // easy with pace zone
+{ type: "easy", mins: 45 }                     // 45-minute easy run
+{ type: "easy", mins: 30, hrZone: 2 }          // 30min in Z2
+{ type: "easy", km: 8,    hr: [130, 148] }     // specific bpm range
+{ type: "easy", km: 3,    pace: "5:30" }       // soft pace zone
 ```
 
 ---
@@ -120,16 +138,19 @@ Continuous effort at a fixed target. Watch shows a ±5 sec/km pace zone or bpm r
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `km` | number | one of km/m | 1 | Distance in kilometres |
-| `m` | number | one of km/m | — | Distance in metres |
+| `km` | number | one of km/m/mins/secs | — | Distance in kilometres |
+| `m` | number | one of km/m/mins/secs | — | Distance in metres |
+| `mins` | number | one of km/m/mins/secs | — | Duration in minutes |
+| `secs` | number | one of km/m/mins/secs | — | Duration in seconds |
 | `pace` | string | one of pace/hrZone/hr | — | Target pace, e.g. `"4:44"` |
 | `hrZone` | number | one of pace/hrZone/hr | — | HR zone target |
 | `hr` | number\|array | one of pace/hrZone/hr | — | HR bpm target |
 
 ```javascript
 { type: "tempo", km: 6,    pace: "4:44" }
-{ type: "tempo", km: 5,    hrZone: 4 }        // threshold effort by HR zone
-{ type: "tempo", km: 5,    hr: [160, 174] }   // threshold effort by bpm range
+{ type: "tempo", mins: 20, pace: "4:44" }      // 20min at race pace
+{ type: "tempo", km: 5,    hrZone: 4 }         // threshold by HR zone
+{ type: "tempo", mins: 25, hr: [160, 174] }    // 25min in threshold bpm range
 ```
 
 ---
@@ -141,18 +162,21 @@ Structured reps with timed recovery. Watch counts down each rep and rest period.
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `reps` | number | **yes** | — | Number of repetitions |
-| `km` | number | one of km/m | 1 | Interval distance in kilometres |
-| `m` | number | one of km/m | — | Interval distance in metres |
+| `km` | number | one of km/m/mins/secs | — | Interval distance in kilometres |
+| `m` | number | one of km/m/mins/secs | — | Interval distance in metres |
+| `mins` | number | one of km/m/mins/secs | — | Interval duration in minutes |
+| `secs` | number | one of km/m/mins/secs | — | Interval duration in seconds |
 | `pace` | string | one of pace/hrZone/hr | — | Target pace, e.g. `"4:30"` |
 | `hrZone` | number | one of pace/hrZone/hr | — | HR zone target |
 | `hr` | number\|array | one of pace/hrZone/hr | — | HR bpm target |
 | `rest` | number | no | 2 | Recovery between reps in **minutes** |
 
 ```javascript
-{ type: "intervals", reps: 6, km: 1,   pace: "4:30", rest: 2 }
-{ type: "intervals", reps: 5, m: 1600, pace: "4:35", rest: 3 }
-{ type: "intervals", reps: 6, km: 1,   hrZone: 4,    rest: 2 }    // by HR zone
-{ type: "intervals", reps: 8, km: 0.4, hr: [170, 185], rest: 1.5 }
+{ type: "intervals", reps: 6, km: 1,    pace: "4:30", rest: 2 }
+{ type: "intervals", reps: 5, m: 1600,  pace: "4:35", rest: 3 }
+{ type: "intervals", reps: 8, mins: 3,  pace: "4:30", rest: 2 }    // 8×3min
+{ type: "intervals", reps: 6, secs: 90, pace: "4:20", rest: 1 }    // 6×90s
+{ type: "intervals", reps: 6, km: 1,    hrZone: 4,    rest: 2 }    // by HR zone
 ```
 
 ---
@@ -275,6 +299,12 @@ A step in your plan uses a `type` that isn't supported. Valid values: `easy`, `t
 - CSRF token is detected automatically — just make sure you are logged in when running the script
 - Garmin's internal API is undocumented and may change without notice
 - One workout per day per week — Garmin doesn't support multiple scheduled workouts on the same date
+
+---
+
+## Contributing
+
+PRs welcome. The step compiler (`compileStep`) and Garmin primitives (`GS`, `repeatGroup`) are generic — they can support any running plan structure, not just the one included here.
 
 ---
 
