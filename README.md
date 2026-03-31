@@ -322,18 +322,6 @@ Garmin Connect's web app communicates with an internal REST API at `connect.garm
 
 Authentication uses the browser's existing session cookies. The only extra credential needed is the CSRF token, which is already in every request the web app makes.
 
-**Workout structure:**
-
-```
-Workout
-└── WorkoutSegment
-    ├── ExecutableStepDTO  (warmup — 2km, no pace target)
-    ├── RepeatGroupDTO     (N repetitions)
-    │   ├── ExecutableStepDTO  (interval — distance + pace zone target)
-    │   └── ExecutableStepDTO  (recovery — time-based)
-    └── ExecutableStepDTO  (cooldown — 2km, no pace target)
-```
-
 Pace targets are stored as m/s with a ±5 sec/km window around the target:
 
 ```
