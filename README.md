@@ -35,7 +35,7 @@ Open `upload_running_plan.js` and edit the line at the top:
 const START_DATE = "2026-04-01";  // First Monday of your training plan
 ```
 
-### 3. Run the script
+### 2. Run the script
 
 1. Open **[connect.garmin.com](https://connect.garmin.com)** in your browser and log in
 2. Press **F12** → **Console** tab
