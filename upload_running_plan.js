@@ -1,7 +1,7 @@
 /**
  * Garmin Connect — Structured Running Plan Uploader
  *
- * Uploads a 10-week half-marathon training plan to Garmin Connect
+ * Uploads a custom training plan to Garmin Connect
  * as structured workouts, scheduled in your calendar.
  *
  * Usage: paste into browser console at connect.garmin.com
@@ -173,6 +173,20 @@ const HR_ZONES = {
 //     { type: "easy",    km: 3 },
 //     { type: "strides", count: 2 },
 //   ]
+// =============================================================================
+// EXAMPLE PLAN — 10-WEEK SUB-1:40 HALF MARATHON
+//
+// The plan below is a working example targeting sub-1:40 (4:44 min/km).
+// Replace it entirely — or edit individual sessions — to match your own
+// training programme before running the script.
+//
+// To build your own plan, just fill in the PLAN array using the step types
+// documented above. Each entry is one session on one day of one week.
+// The script will auto-generate workout names, descriptions, and distances
+// — you only need to define what matters: the session structure.
+//
+// Not sure where to start? Keep this plan and just change START_DATE,
+// adjust the paces to your current fitness, and go.
 // =============================================================================
 
 const PLAN = [
