@@ -48,12 +48,15 @@ const HR_ZONES = {
 // STEP REFERENCE
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// ── DISTANCE ─────────────────────────────────────────────────────────────────
-// Every step accepts km or m. They are interchangeable:
-//   km: 2      → 2 kilometres
-//   m: 2000    → same result
-// If both are given, km takes precedence.
-// If neither is given, a sensible default is used (noted per type).
+// ── DISTANCE OR DURATION ─────────────────────────────────────────────────────
+// Every step accepts distance (km/m) OR duration (mins/secs) — not both.
+// If both are given: km > m > mins > secs.
+// At least one must be provided (except strides where km/m is optional).
+//
+//   km:   2      → 2 kilometres
+//   m:    2000   → 2000 metres    (same result)
+//   mins: 20     → 20 minutes
+//   secs: 1200   → 1200 seconds   (same result)
 //
 // ── TARGET (pace / heart rate) ───────────────────────────────────────────────
 // Every step accepts at most one target. Priority: pace > hrZone > hr > none.
@@ -84,27 +87,29 @@ const HR_ZONES = {
 //   { type: "easy", km: 3,  pace: "5:30" }        // easy with soft pace zone
 //
 // ── type: "tempo" ────────────────────────────────────────────────────────────
-//   km / m   Distance (default: 1km)
-//   pace     Target pace (required if no hrZone/hr)
-//   hrZone   HR zone target (alternative to pace)
-//   hr       HR bpm target  (alternative to pace/hrZone)
+//   km / m / mins / secs   Distance or duration (required — one of them)
+//   pace                   Target pace (required if no hrZone/hr)
+//   hrZone                 HR zone target (alternative to pace)
+//   hr                     HR bpm target  (alternative to pace/hrZone)
 //
 //   { type: "tempo", km: 6,    pace: "4:44" }
-//   { type: "tempo", m: 3000,  hrZone: 4 }       // threshold effort by HR
-//   { type: "tempo", km: 5,    hr: [160, 172] }  // threshold effort by bpm
+//   { type: "tempo", mins: 20, pace: "4:44" }     // 20min at race pace
+//   { type: "tempo", km: 5,    hrZone: 4 }        // threshold effort by HR zone
+//   { type: "tempo", mins: 25, hr: [160, 174] }   // 25min in threshold bpm range
 //
 // ── type: "intervals" ────────────────────────────────────────────────────────
-//   reps     Number of repetitions (required)
-//   km / m   Interval distance (default: 1km)
-//   pace     Target pace (required if no hrZone/hr)
-//   hrZone   HR zone target (alternative to pace)
-//   hr       HR bpm target  (alternative to pace/hrZone)
-//   rest     Recovery between reps in minutes (default: 2)
+//   reps                   Number of repetitions (required)
+//   km / m / mins / secs   Interval distance or duration (required — one of them)
+//   pace                   Target pace (required if no hrZone/hr)
+//   hrZone                 HR zone target (alternative to pace)
+//   hr                     HR bpm target  (alternative to pace/hrZone)
+//   rest                   Recovery between reps in minutes (default: 2)
 //
-//   { type: "intervals", reps: 6, km: 1,   pace: "4:30", rest: 2 }
-//   { type: "intervals", reps: 5, m: 1600, pace: "4:35", rest: 3 }
-//   { type: "intervals", reps: 6, km: 1,   hrZone: 4,    rest: 2 }  // by HR zone
-//   { type: "intervals", reps: 8, km: 0.4, hr: [170, 185], rest: 1.5 }
+//   { type: "intervals", reps: 6, km: 1,    pace: "4:30", rest: 2 }
+//   { type: "intervals", reps: 5, m: 1600,  pace: "4:35", rest: 3 }
+//   { type: "intervals", reps: 8, mins: 3,  pace: "4:30", rest: 2 }  // 8×3min
+//   { type: "intervals", reps: 6, secs: 90, pace: "4:20", rest: 1 }  // 6×90s
+//   { type: "intervals", reps: 6, km: 1,    hrZone: 4,    rest: 2 }  // by HR zone
 //
 // ── type: "strides" ──────────────────────────────────────────────────────────
 //   count    Number of 100m strides (required)
@@ -370,14 +375,31 @@ function workoutDate(week, day) {
 }
 
 // =============================================================================
-// DISTANCE HELPER
-// Resolves km/m fields to metres. km takes precedence over m.
+// DISTANCE / DURATION HELPER
+//
+// Steps can specify distance (km/m) OR duration (mins/secs) — not both.
+// km takes precedence over m; mins takes precedence over secs.
+// Returns { distM, timeSecs } — exactly one will be non-null.
 // =============================================================================
 
+function resolveDist(step, defaultKm = 1) {
+  if (step.km   != null) return { distM: Math.round(step.km * 1000),     timeSecs: null };
+  if (step.m    != null) return { distM: Math.round(step.m),              timeSecs: null };
+  if (step.mins != null) return { distM: null, timeSecs: Math.round(step.mins * 60)       };
+  if (step.secs != null) return { distM: null, timeSecs: Math.round(step.secs)             };
+  return { distM: Math.round(defaultKm * 1000), timeSecs: null };
+}
+
+/** Legacy helper — returns metres only (uses average pace to estimate if time-based) */
 function resolveM(step, defaultKm = 1) {
-  if (step.km != null) return Math.round(step.km * 1000);
-  if (step.m  != null) return Math.round(step.m);
-  return Math.round(defaultKm * 1000);
+  const { distM, timeSecs } = resolveDist(step, defaultKm);
+  if (distM != null) return distM;
+  return Math.round(timeSecs / RECOVERY_PACE_SEC_KM * 1000);
+}
+
+/** Estimated distance in metres for a time-based step at a given pace (sec/km) */
+function timeToDistM(secs, secPerKm) {
+  return Math.round(secs / secPerKm * 1000);
 }
 
 // =============================================================================
@@ -472,12 +494,31 @@ function execStep(typeId, typeKey, typeDisplay, endCond, endVal, target) {
 
 // Garmin step type IDs: 1=warmup, 2=cooldown, 3=interval, 4=recovery, 6=repeat
 const GS = {
-  warmup:   (dist, target = NO_TARGET) => execStep(1, "warmup",   1, COND.distance(), dist, target),
-  cooldown: (dist, target = NO_TARGET) => execStep(2, "cooldown", 2, COND.distance(), dist, target),
-  run:      (dist, target = NO_TARGET) => execStep(3, "interval", 3, COND.distance(), dist, target),
-  recovery: (secs)                     => execStep(4, "recovery", 4, COND.time(),     secs, NO_TARGET),
-  recoDist: (dist)                     => execStep(4, "recovery", 4, COND.distance(), dist, NO_TARGET),
+  warmup:    (dist,  target = NO_TARGET) => execStep(1, "warmup",   1, COND.distance(), dist,  target),
+  warmupT:   (secs,  target = NO_TARGET) => execStep(1, "warmup",   1, COND.time(),     secs,  target),
+  cooldown:  (dist,  target = NO_TARGET) => execStep(2, "cooldown", 2, COND.distance(), dist,  target),
+  cooldownT: (secs,  target = NO_TARGET) => execStep(2, "cooldown", 2, COND.time(),     secs,  target),
+  run:       (dist,  target = NO_TARGET) => execStep(3, "interval", 3, COND.distance(), dist,  target),
+  runT:      (secs,  target = NO_TARGET) => execStep(3, "interval", 3, COND.time(),     secs,  target),
+  recovery:  (secs)                      => execStep(4, "recovery", 4, COND.time(),     secs,  NO_TARGET),
+  recoDist:  (dist)                      => execStep(4, "recovery", 4, COND.distance(), dist,  NO_TARGET),
 };
+
+/** Build a run/warmup/cooldown step from a resolveDist result */
+function gsStep(typeId, typeKey, typeDisplay, dist) {
+  const { distM, timeSecs } = dist;
+  if (distM    != null) return execStep(typeId, typeKey, typeDisplay, COND.distance(), distM,    dist.target ?? NO_TARGET);
+  if (timeSecs != null) return execStep(typeId, typeKey, typeDisplay, COND.time(),     timeSecs, dist.target ?? NO_TARGET);
+  throw new Error("gsStep: neither distM nor timeSecs resolved");
+}
+
+/** Resolve a step def to a Garmin run/warmup/cooldown step */
+function makeRunStep(typeId, typeKey, typeDisplay, stepDef, defaultKm, target) {
+  const { distM, timeSecs } = resolveDist(stepDef, defaultKm);
+  const cond = distM != null ? COND.distance() : COND.time();
+  const val  = distM != null ? distM : timeSecs;
+  return execStep(typeId, typeKey, typeDisplay, cond, val, target);
+}
 
 function repeatGroup(reps, children) {
   const id = nextId();
@@ -496,44 +537,75 @@ function repeatGroup(reps, children) {
 
 const RECOVERY_PACE_SEC_KM = 330; // ~5:30/km — used to estimate recovery distance
 
+/** Resolve distM for total-distance accounting (time-based steps estimated at recovery pace) */
+function estDistM(resolved, fallbackSecPerKm = RECOVERY_PACE_SEC_KM) {
+  if (resolved.distM    != null) return resolved.distM;
+  if (resolved.timeSecs != null) return timeToDistM(resolved.timeSecs, fallbackSecPerKm);
+  return 0;
+}
+
+function hasDistance(stepDef) {
+  return stepDef.km != null || stepDef.m != null;
+}
+function hasDuration(stepDef) {
+  return stepDef.mins != null || stepDef.secs != null;
+}
+
 function compileStep(stepDef) {
   switch (stepDef.type) {
 
     // ── easy ──────────────────────────────────────────────────────────────
     case "easy": {
-      const distM  = resolveM(stepDef, 1);
-      const target = resolveTarget(stepDef);
-      let garminStep;
-      if      (stepDef.label === "warmup")   garminStep = GS.warmup(distM, target);
-      else if (stepDef.label === "cooldown") garminStep = GS.cooldown(distM, target);
-      else                                   garminStep = GS.run(distM, target);
-      return { garminSteps: [garminStep], distM };
+      if (!hasDistance(stepDef) && !hasDuration(stepDef))
+        throw new Error('"easy" step requires km, m, mins, or secs');
+      const target  = resolveTarget(stepDef);
+      const typeId  = stepDef.label === "warmup" ? 1 : stepDef.label === "cooldown" ? 2 : 3;
+      const typeKey = stepDef.label === "warmup" ? "warmup" : stepDef.label === "cooldown" ? "cooldown" : "interval";
+      const typeDsp = stepDef.label === "warmup" ? 1 : stepDef.label === "cooldown" ? 2 : 3;
+      const garminStep = makeRunStep(typeId, typeKey, typeDsp, stepDef, 1, target);
+      const resolved   = resolveDist(stepDef, 1);
+      return { garminSteps: [garminStep], distM: estDistM(resolved) };
     }
 
     // ── tempo ─────────────────────────────────────────────────────────────
     case "tempo": {
+      if (!hasDistance(stepDef) && !hasDuration(stepDef))
+        throw new Error('"tempo" step requires km, m, mins, or secs');
       if (!stepDef.pace && stepDef.hr == null && stepDef.hrZone == null)
         throw new Error('"tempo" step requires pace, hr, or hrZone');
-      const distM = resolveM(stepDef, 1);
-      return { garminSteps: [GS.run(distM, resolveTarget(stepDef))], distM };
+      const resolved = resolveDist(stepDef, 1);
+      return {
+        garminSteps: [makeRunStep(3, "interval", 3, stepDef, 1, resolveTarget(stepDef))],
+        distM: estDistM(resolved),
+      };
     }
 
     // ── intervals ─────────────────────────────────────────────────────────
     case "intervals": {
       if (stepDef.reps == null) throw new Error('"intervals" step requires reps');
+      if (!hasDistance(stepDef) && !hasDuration(stepDef))
+        throw new Error('"intervals" step requires km, m, mins, or secs');
       if (!stepDef.pace && stepDef.hr == null && stepDef.hrZone == null)
         throw new Error('"intervals" step requires pace, hr, or hrZone');
-      const distM     = resolveM(stepDef, 1);
+      const resolved  = resolveDist(stepDef, 1);
       const restSecs  = Math.round((stepDef.rest ?? 2) * 60);
-      const recovDist = Math.round(restSecs / RECOVERY_PACE_SEC_KM * 1000);
+      const recovDist = timeToDistM(restSecs, RECOVERY_PACE_SEC_KM);
+      const intervalDist = estDistM(resolved);
+      const { distM: iDistM, timeSecs: iTimeSecs } = resolved;
+      const intervalStep = iDistM != null
+        ? execStep(3, "interval", 3, COND.distance(), iDistM,    { ...resolveTarget(stepDef), targetType: resolveTarget(stepDef).targetType })
+        : execStep(3, "interval", 3, COND.time(),     iTimeSecs, { ...resolveTarget(stepDef), targetType: resolveTarget(stepDef).targetType });
+      // Fix: spread targetType correctly
+      const tgt = resolveTarget(stepDef);
+      const { targetType, ...tgtFields } = tgt;
+      const intStep = iDistM != null
+        ? { type:"ExecutableStepDTO", stepId:0, stepOrder:0, stepType:{stepTypeId:3,stepTypeKey:"interval",displayOrder:3}, endCondition:COND.distance(), endConditionValue:iDistM,    targetType, ...tgtFields, category:null, exerciseName:null, stepAudioNote:null }
+        : { type:"ExecutableStepDTO", stepId:0, stepOrder:0, stepType:{stepTypeId:3,stepTypeKey:"interval",displayOrder:3}, endCondition:COND.time(),     endConditionValue:iTimeSecs, targetType, ...tgtFields, category:null, exerciseName:null, stepAudioNote:null };
       return {
         garminSteps: [
-          repeatGroup(stepDef.reps, [
-            GS.run(distM, resolveTarget(stepDef)),
-            GS.recovery(restSecs),
-          ]),
+          repeatGroup(stepDef.reps, [intStep, GS.recovery(restSecs)]),
         ],
-        distM: stepDef.reps * distM + stepDef.reps * recovDist,
+        distM: stepDef.reps * intervalDist + stepDef.reps * recovDist,
       };
     }
 
@@ -544,7 +616,7 @@ function compileStep(stepDef) {
       const stridePace  = stepDef.pace ?? "3:00";
       const restSecs    = Math.round(stepDef.rest ?? 90);
       const strideDistM = stepDef.count * 100;
-      const recovDistM  = stepDef.count * Math.round(restSecs / RECOVERY_PACE_SEC_KM * 1000);
+      const recovDistM  = stepDef.count * timeToDistM(restSecs, RECOVERY_PACE_SEC_KM);
       const garminSteps = [];
       if (easyDistM > 0) garminSteps.push(GS.run(easyDistM));
       garminSteps.push(
@@ -558,13 +630,15 @@ function compileStep(stepDef) {
 
     // ── recovery ──────────────────────────────────────────────────────────
     case "recovery": {
-      if (stepDef.km != null || stepDef.m != null) {
-        const distM = resolveM(stepDef, 1);
-        return { garminSteps: [GS.recoDist(distM)], distM };
+      const { distM, timeSecs } = resolveDist(stepDef, null);
+      if (distM != null)    return { garminSteps: [GS.recoDist(distM)],  distM };
+      if (timeSecs != null) {
+        const estDist = timeToDistM(timeSecs, RECOVERY_PACE_SEC_KM);
+        return { garminSteps: [GS.recovery(timeSecs)], distM: estDist };
       }
-      const secs  = Math.round((stepDef.mins ?? 5) * 60);
-      const distM = Math.round(secs / RECOVERY_PACE_SEC_KM * 1000);
-      return { garminSteps: [GS.recovery(secs)], distM };
+      // default 5 min
+      const secs = 300;
+      return { garminSteps: [GS.recovery(secs)], distM: timeToDistM(secs, RECOVERY_PACE_SEC_KM) };
     }
 
     default:
@@ -591,32 +665,35 @@ function targetLabel(s) {
   return "";
 }
 
+function distLabel(s, defaultKm = 1) {
+  if (s.km   != null) return mStr(Math.round(s.km * 1000));
+  if (s.m    != null) return mStr(Math.round(s.m));
+  if (s.mins != null) return `${s.mins}min`;
+  if (s.secs != null) return `${s.secs}s`;
+  return mStr(Math.round(defaultKm * 1000));
+}
+
 function autoName(steps) {
   return steps.map(s => {
     const tgt = targetLabel(s);
     switch (s.type) {
       case "easy": {
-        const distM  = resolveM(s, 1);
+        const d      = distLabel(s, 1);
         const suffix = s.label ? ` (${s.label})` : "";
-        return tgt ? `${mStr(distM)} easy ${tgt}${suffix}` : `${mStr(distM)} easy${suffix}`;
+        return tgt ? `${d} easy ${tgt}${suffix}` : `${d} easy${suffix}`;
       }
       case "tempo": {
-        const distM = resolveM(s, 1);
-        return `${mStr(distM)} ${tgt}`;
+        return `${distLabel(s, 1)} ${tgt}`;
       }
       case "intervals": {
-        const distM = resolveM(s, 1);
-        return `${s.reps}×${mStr(distM)} ${tgt}`;
+        return `${s.reps}×${distLabel(s, 1)} ${tgt}`;
       }
       case "strides": {
-        const easyDistM = resolveM(s, 0);
-        return easyDistM > 0
-          ? `${mStr(easyDistM)} + ${s.count}×100m strides`
-          : `${s.count}×100m strides`;
+        const easy = distLabel(s, 0);
+        return (s.km > 0 || s.m > 0) ? `${easy} + ${s.count}×100m strides` : `${s.count}×100m strides`;
       }
       case "recovery": {
-        if (s.km != null || s.m != null) return `${mStr(resolveM(s, 1))} recovery`;
-        return `${s.mins ?? 5}min recovery`;
+        return `${distLabel(s, null) ?? "5min"} recovery`;
       }
       default: return s.type;
     }
@@ -625,24 +702,22 @@ function autoName(steps) {
 
 function autoDescription(steps) {
   return steps.map(s => {
-    const tgt = targetLabel(s);
+    const d = distLabel(s, 1);
     const tgtFull = s.pace ? `@${s.pace}/km`
                  : s.hrZone != null    ? `Z${s.hrZone} (${HR_ZONES[s.hrZone]?.[0]}-${HR_ZONES[s.hrZone]?.[1]} bpm)`
                  : Array.isArray(s.hr) ? `${s.hr[0]}-${s.hr[1]} bpm`
                  : s.hr != null        ? `~${s.hr} bpm (±10)`
                  : "";
     switch (s.type) {
-      case "easy":      return `${mStr(resolveM(s, 1))} easy${tgtFull ? " " + tgtFull : ""}`;
-      case "tempo":     return `${mStr(resolveM(s, 1))} ${tgtFull}`;
-      case "intervals": return `${s.reps}×${mStr(resolveM(s, 1))} ${tgtFull}, ${s.rest ?? 2}min rest`;
+      case "easy":      return `${d} easy${tgtFull ? " " + tgtFull : ""}`;
+      case "tempo":     return `${d} ${tgtFull}`;
+      case "intervals": return `${s.reps}×${distLabel(s,1)} ${tgtFull}, ${s.rest ?? 2}min rest`;
       case "strides": {
-        const easy = resolveM(s, 0);
-        return (easy > 0 ? `${mStr(easy)} easy + ` : "") + `${s.count}×100m strides`;
+        const easy = distLabel(s, 0);
+        return ((s.km > 0 || s.m > 0) ? `${easy} easy + ` : "") + `${s.count}×100m strides`;
       }
       case "recovery":
-        return s.km != null || s.m != null
-          ? `${mStr(resolveM(s, 1))} recovery`
-          : `${s.mins ?? 5}min recovery`;
+        return `${distLabel(s, null) ?? "5min"} recovery`;
       default: return s.type;
     }
   }).join(" | ");
